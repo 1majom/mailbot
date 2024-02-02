@@ -23,6 +23,7 @@ import schedule
 import time
 from telegram import ForceReply, Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
+import config
 messages=[]
 # Enable logging
 logging.basicConfig(
@@ -38,30 +39,34 @@ logger = logging.getLogger(__name__)
 # context.
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send a message when the command /start is issued."""
-    send_email(messages)
-    await update.message.reply_text(messages)
+    if(update.effective_chat.id==config.chat_id):
+        send_email(messages)
+        await update.message.reply_text("Email elküldve!")
+        messages.clear()
 
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send a message when the command /help is issued."""
-    await update.message.reply_text("Jaj-jaj")
+    if(update.effective_chat.id==config.chat_id):
+        await update.message.reply_text("Jaj-jaj")
 
+async def clear_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if(update.effective_chat.id==config.chat_id):
+        messages.clear()
 
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Echo the user message."""
-    message=update.message.chat.username + ": " + update.message.text
-    messages.append(message)
-    await update.message.reply_text(update.message.text)
+    if(update.effective_chat.id==config.chat_id):
+        # await update.message.reply_text(getattr(update.message, 'from_user'))
+        message=config.okos(getattr(update.message, 'from_user').id) + ": " + update.message.text
+        messages.append(message)
+    
 
 
-EMAIL_FROM = 'kogeza2@gmail.com'
-EMAIL_PASSWORD = 'ttiy grid nuig wobb '  # Use App Password for Gmail
-EMAIL_TO = '1kalacs@pm.me'
-#wix_@freemail.hu
-
-# Replace with the ID of the Telegram group
-TARGET_GROUP_ID = -100123456789  # Replace with your group ID
+EMAIL_FROM = config.EMAIL_FROM
+EMAIL_PASSWORD = config.EMAIL_PASSWORD # Use App Password for Gmail
+EMAIL_TO = config.EMAIL_TO
 
 
 def send_email(messages):
@@ -83,11 +88,12 @@ def send_email(messages):
 def main() -> None:
     """Start the bot."""
     # Create the Application and pass it your bot's token.
-    application = Application.builder().token("6541728157:AAEAjiLbw26wQ_K_MMQvOV7wt-ckWBU9Tl0").build()
+    application = Application.builder().token(config.token).build()
 
     # on different commands - answer in Telegram
     application.add_handler(CommandHandler("apa", start))
     application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("clear", clear_cmd))
 
     # on non command i.e message - echo the message on Telegram
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
