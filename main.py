@@ -16,7 +16,11 @@ import time
 from telegram import ForceReply, Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 import config
-messages=[]
+import datetime 
+from datetime import datetime 
+import os, json
+
+
 # Enable logging
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
@@ -27,33 +31,85 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 
-# Define a few command handlers. These usually take the two arguments update and
-# context.
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Send a message when the command /start is issued."""
+
+async def send_email_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Getting the messages into a list and sending them in an email."""
     if(update.effective_chat.id==config.chat_id):
-        send_email(messages)
-        await update.message.reply_text("Email elküldve!")
-        messages.clear()
+        text=[]
+        try:
+            with open('data.json', 'r') as f:
+                data = json.load(f)
+        except (FileNotFoundError, json.decoder.JSONDecodeError):
+            # If the file does not exist, start with an empty dictionary
+            await update.message.reply_text(("Nincs üzenet!"))
+            return
+        logger.info(data)
+        for key, value in data.items():
+            text.append(value)
+
+        await update.message.reply_text(("Üzenetek elküldve!"))
+        send_email(text)
+        logger.info("\n"+str(text))
+        os.remove('data.json')
 
 
+async def pop_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Removing the last message from the dict."""
+    if(update.effective_chat.id==config.chat_id):
+        try:
+            with open('data.json', 'r') as f:
+                data = json.load(f)
+        except(FileNotFoundError, json.decoder.JSONDecodeError):
+            # If the file does not exist, start with an empty dictionary
+            data = {}
+            return
+        data.popitem()
+        try:
+            with open('data.json', 'w') as f:
+                json.dump(data, f)
+        except(FileNotFoundError, json.decoder.JSONDecodeError):
+            # If the file does not exist, start with an empty dictionary
+            data = {}
+            return
+        await update.message.reply_text("Az legutóbbi üzenet törölve!")
 
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+
+async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send a message when the command /help is issued."""
     if(update.effective_chat.id==config.chat_id):
         await update.message.reply_text("Jaj-jaj")
 
-async def clear_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def clear_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Clear the dict."""
     if(update.effective_chat.id==config.chat_id):
-        messages.clear()
+        os.remove('data.json')
+        await update.message.reply_text("Az összes üzenet törölve!")
+
 
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Echo the user message."""
+    """Handling when a new message or a message edition is sent."""
+    message=None
+    text=""
+    try:
+        with open('data.json', 'r') as f:
+            data = json.load(f)
+    except (FileNotFoundError, json.decoder.JSONDecodeError):
+        # If the file does not exist, start with an empty dictionary
+        data = {}
+
     if(update.effective_chat.id==config.chat_id):
-        # await update.message.reply_text(getattr(update.message, 'from_user'))
-        message=config.okos(getattr(update.message, 'from_user').id) + ": " + update.message.text
-        messages.append(message)
-    
+        if update.message:
+            message = update.message
+        elif update.edited_message:
+            message = update.edited_message
+        if message!=None:
+            reply_to_message = message.reply_to_message
+            if reply_to_message:
+                text += ">>"+reply_to_message.date.strftime("%Y-%m-%d %H:%M")+": "+config.okos(message.from_user.id)+": "+str(reply_to_message.text) + "\n"
+            text+=">"+message.date.strftime("%Y-%m-%d %H:%M")+": "+config.okos(message.from_user.id)+": "+(str(message.text))
+            data[message.message_id] = text
+            with open('data.json', 'w') as f:
+                json.dump(data, f)
 
 
 EMAIL_FROM = config.EMAIL_FROM
@@ -62,7 +118,7 @@ EMAIL_TO = config.EMAIL_TO
 
 
 def send_email(messages):
-    subject = 'Telegram Messages From Group'
+    subject = 'Telegram üzenetek a csoportból'
     body = '\n'.join(messages)
 
     msg = MIMEMultipart()
@@ -83,12 +139,15 @@ def main() -> None:
     application = Application.builder().token(config.token).build()
 
     # on different commands - answer in Telegram
-    application.add_handler(CommandHandler("apa", start))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler("clear", clear_cmd))
+    application.add_handler(CommandHandler("apa", send_email_handler))
+    application.add_handler(CommandHandler("help", help_handler))
+    application.add_handler(CommandHandler("clear", clear_handler))
+    application.add_handler(CommandHandler("pop", pop_handler))
 
-    # on non command i.e message - echo the message on Telegram
+
+    # on non command i.e message
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
+
 
     # Run the bot until the user presses Ctrl-C
     application.run_polling(allowed_updates=Update.ALL_TYPES)
