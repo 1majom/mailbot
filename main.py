@@ -19,7 +19,11 @@ import config
 import datetime 
 from datetime import datetime 
 import os, json
+from pprint import pprint
 
+EMAIL_FROM = config.EMAIL_FROM
+EMAIL_PASSWORD = config.EMAIL_PASSWORD # Use App Password for Gmail
+EMAIL_TO = config.EMAIL_TO
 
 # Enable logging
 logging.basicConfig(
@@ -111,10 +115,31 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             with open('data.json', 'w') as f:
                 json.dump(data, f)
 
+async def echo_img(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handling when a messages containing an image or a gif is sent."""
+    message=None
+    text=""
+    try:
+        with open('data.json', 'r') as f:
+            data = json.load(f)
+    except (FileNotFoundError, json.decoder.JSONDecodeError):
+        # If the file does not exist, start with an empty dictionary
+        data = {}
 
-EMAIL_FROM = config.EMAIL_FROM
-EMAIL_PASSWORD = config.EMAIL_PASSWORD # Use App Password for Gmail
-EMAIL_TO = config.EMAIL_TO
+    if(update.effective_chat.id==config.chat_id):
+        if update.message:
+            message = update.message
+        elif update.edited_message:
+            message = update.edited_message
+        if message!=None:
+            reply_to_message = message.reply_to_message
+            if reply_to_message:
+                text += ">>"+reply_to_message.date.strftime("%Y-%m-%d %H:%M")+": "+config.okos(message.from_user.id)+": "+str(reply_to_message.text) + "\n"
+            text+=">"+message.date.strftime("%Y-%m-%d %H:%M")+": "+config.okos(message.from_user.id)+": "+config.img_placeholder
+            data[message.message_id] = text
+            with open('data.json', 'w') as f:
+                json.dump(data, f)
+
 
 
 def send_email(messages):
@@ -133,10 +158,14 @@ def send_email(messages):
         server.login(EMAIL_FROM, EMAIL_PASSWORD)
         server.sendmail(EMAIL_FROM, EMAIL_TO, msg.as_string())
 
+async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Catch the error."""
+    print(f"{datetime.now()} - An error occurred: {context.error}")
+
+
 def main() -> None:
-    """Start the bot."""
-    # Create the Application and pass it your bot's token.
     application = Application.builder().token(config.token).build()
+    application.add_error_handler(error_handler)
 
     # on different commands - answer in Telegram
     application.add_handler(CommandHandler("apa", send_email_handler))
@@ -147,6 +176,8 @@ def main() -> None:
 
     # on non command i.e message
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
+    application.add_handler(MessageHandler(filters.PHOTO & ~filters.COMMAND, echo_img))
+    application.add_handler(MessageHandler(filters.Document.ALL & ~filters.COMMAND, echo_img))
 
 
     # Run the bot until the user presses Ctrl-C
