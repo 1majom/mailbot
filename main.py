@@ -21,6 +21,10 @@ from datetime import datetime
 import os, json
 from pprint import pprint
 
+
+from nextcloud import NextCloud
+from webdav3.client import Client
+
 EMAIL_FROM = config.EMAIL_FROM
 EMAIL_PASSWORD = config.EMAIL_PASSWORD # Use App Password for Gmail
 EMAIL_TO = config.EMAIL_TO
@@ -119,6 +123,128 @@ async def echo_img(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 json.dump(data, f)
 
 
+# Initialize Nextcloud clients
+nc = NextCloud(
+    endpoint=config.NEXTCLOUD_URL,
+    user=config.NEXTCLOUD_USER,
+    password=config.NEXTCLOUD_PASSWORD
+)
+webdav_options = {
+    'webdav_hostname': f"{config.NEXTCLOUD_URL}/remote.php/webdav/",
+    'webdav_login': config.NEXTCLOUD_USER,
+    'webdav_password': config.NEXTCLOUD_PASSWORD
+}
+webdav_client = Client(webdav_options)
+
+async def echo_img2(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    try:
+        if update.effective_chat.id == config.chat_id:
+            message = update.message
+            message_id = message.message_id
+            date = message.date
+
+            # Check if the message contains a photo
+            if message.photo:
+                # Get best quality
+                photo_file = await message.photo[-1].get_file()
+
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                file_name = f"{timestamp}_{photo_file.file_unique_id}.jpg"
+                folder_path = f"telegram_bot_images/{date.strftime('%Y-%m')}"
+                full_remote_path = f"{folder_path}/{file_name}"
+
+                # Create temporary directory
+                os.makedirs('temp', exist_ok=True)
+
+                # Download photo temporarily
+                local_path = f"temp/{file_name}"
+                await photo_file.download_to_drive(local_path)
+
+            # Check if the message contains a document
+            elif message.document:
+                document_file = await message.document.get_file()
+                mime_type = message.document.mime_type
+
+                # Determine the file type based on MIME type
+                if mime_type.startswith('image/'):
+                    file_type = 'image'
+                elif mime_type.startswith('video/'):
+                    file_type = 'video'
+                elif mime_type == 'image/gif':
+                    file_type = 'gif'
+                else:
+                    await update.message.reply_text("A MailerBot nem fogja elküldeni ezt a fájltípust.")
+                    return
+
+                # Generate unique filename
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')[:-3]
+                file_name = f"{timestamp}_{message.document.file_name}"
+                folder_path = f"telegram_bot_{file_type}s/{date.strftime('%Y-%m')}"
+                full_remote_path = f"{folder_path}/{file_name}"
+
+                # Create temporary directory
+                os.makedirs('temp', exist_ok=True)
+
+                # Download document temporarily
+                local_path = f"temp/{file_name}"
+                await document_file.download_to_drive(local_path)
+
+            else:
+                await update.message.reply_text("A MailerBot nem fogja elküldeni ezt a fájltípust.")
+                return
+
+            try:
+                # Create parent directories in Nextcloud
+                parent_folders = folder_path.split('/')
+                current_path = ''
+                for folder in parent_folders:
+                    current_path = f"{current_path}/{folder}"
+                    if not webdav_client.check(current_path):
+                        webdav_client.mkdir(current_path)
+
+                # Upload to Nextcloud
+                webdav_client.upload(remote_path=full_remote_path, local_path=local_path)
+
+                # Generate public share link
+                share_response = nc.create_share(
+                    path=f"/{full_remote_path}",
+                    share_type=3,  # 3= public link
+                    permissions=1   # 1= read-only
+                )
+
+                # Get the public URL and store it with the message
+                public_url = share_response.data['url']
+
+                text = ""
+                try:
+                    with open('data.json', 'r') as f:
+                        data = json.load(f)
+                except (FileNotFoundError, json.decoder.JSONDecodeError):
+                    data = {}
+
+                reply_to_message = message.reply_to_message
+                if reply_to_message:
+                    text += ">>"+reply_to_message.date.strftime("%Y-%m-%d %H:%M")+": "+config.okos(message.from_user.id)+": "+str(reply_to_message.text) + "\n"
+
+                text += ">"+message.date.strftime("%Y-%m-%d %H:%M")+": "+config.okos(message.from_user.id)+f": [File]({public_url})"
+                data[str(message_id)] = text
+
+                with open('data.json', 'w') as f:
+                    json.dump(data, f)
+
+            except Exception as e:
+                logger.error(f"Nem tudtam feldolgozni ezt a képet: {str(e)}")
+                raise
+
+            finally:
+                # Clean up temporary file
+                if os.path.exists(local_path):
+                    os.remove(local_path)
+
+    except Exception as e:
+        logger.error(f"Nem tudtam feldolgozni ezt a képet: {str(e)}")
+
+
 async def list_messages_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """List all currently kept messages."""
     if(update.effective_chat.id==config.chat_id):
@@ -191,8 +317,8 @@ def main() -> None:
 
     # on non command i.e message
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
-    application.add_handler(MessageHandler(filters.PHOTO & ~filters.COMMAND, echo_img))
-    application.add_handler(MessageHandler(filters.Document.ALL & ~filters.COMMAND, echo_img))
+    application.add_handler(MessageHandler(filters.PHOTO & ~filters.COMMAND, echo_img2))
+    application.add_handler(MessageHandler(filters.Document.ALL & ~filters.COMMAND, echo_img2))
 
     # Run the bot until the user presses Ctrl-C
     application.run_polling(allowed_updates=Update.ALL_TYPES)
