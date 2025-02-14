@@ -56,28 +56,6 @@ async def send_email_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         logger.info("\n"+str(text))
         os.remove('data.json')
 
-
-async def pop_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Removing the last message from the dict."""
-    if(update.effective_chat.id==config.chat_id):
-        try:
-            with open('data.json', 'r') as f:
-                data = json.load(f)
-        except(FileNotFoundError, json.decoder.JSONDecodeError):
-            # If the file does not exist, start with an empty dictionary
-            data = {}
-            return
-        data.popitem()
-        try:
-            with open('data.json', 'w') as f:
-                json.dump(data, f)
-        except(FileNotFoundError, json.decoder.JSONDecodeError):
-            # If the file does not exist, start with an empty dictionary
-            data = {}
-            return
-        await update.message.reply_text("Az legutóbbi üzenet törölve!")
-
-
 async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send a message when the command /help is issued."""
     if(update.effective_chat.id==config.chat_id):
@@ -141,6 +119,43 @@ async def echo_img(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 json.dump(data, f)
 
 
+async def list_messages_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """List all currently kept messages."""
+    if(update.effective_chat.id==config.chat_id):
+        try:
+            with open('data.json', 'r') as f:
+                data = json.load(f)
+        except (FileNotFoundError, json.decoder.JSONDecodeError):
+            await update.message.reply_text("Nincs üzenet!")
+            return
+        if not data:
+            await update.message.reply_text("Nincs üzenet!")
+            return
+        messages = "\n".join([f"{key}: {value}" for key, value in data.items()])
+        await update.message.reply_text(f"Jelenlegi üzenetek:\n{messages}")
+
+
+async def remove_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Remove a specific message by its ID."""
+    if(update.effective_chat.id==config.chat_id):
+        if len(context.args) != 1:
+            await update.message.reply_text("Használat: /remove <message_id>")
+            return
+        message_id = context.args[0]
+        try:
+            with open('data.json', 'r') as f:
+                data = json.load(f)
+        except (FileNotFoundError, json.decoder.JSONDecodeError):
+            await update.message.reply_text("Nincs üzenet!")
+            return
+        if message_id not in data:
+            await update.message.reply_text(f"Nincs ilyen üzenet: {message_id}")
+            return
+        del data[message_id]
+        with open('data.json', 'w') as f:
+            json.dump(data, f)
+        await update.message.reply_text(f"Üzenet törölve: {message_id}")
+
 
 def send_email(messages):
     subject = 'Telegram üzenetek a csoportból'
@@ -171,14 +186,13 @@ def main() -> None:
     application.add_handler(CommandHandler("apa", send_email_handler))
     application.add_handler(CommandHandler("help", help_handler))
     application.add_handler(CommandHandler("clear", clear_handler))
-    application.add_handler(CommandHandler("pop", pop_handler))
-
+    application.add_handler(CommandHandler("list", list_messages_handler))
+    application.add_handler(CommandHandler("del", remove_message_handler))
 
     # on non command i.e message
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
     application.add_handler(MessageHandler(filters.PHOTO & ~filters.COMMAND, echo_img))
     application.add_handler(MessageHandler(filters.Document.ALL & ~filters.COMMAND, echo_img))
-
 
     # Run the bot until the user presses Ctrl-C
     application.run_polling(allowed_updates=Update.ALL_TYPES)
