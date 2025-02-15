@@ -150,7 +150,7 @@ async def echo_img2(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
                 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
                 file_name = f"{timestamp}_{photo_file.file_unique_id}.jpg"
-                folder_path = f"telegram_bot_images/{date.strftime('%Y-%m')}"
+                folder_path = f"telegram_bot_files/{date.strftime('%Y-%m')}"
                 full_remote_path = f"{folder_path}/{file_name}"
 
                 # Create temporary directory
@@ -166,12 +166,8 @@ async def echo_img2(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 mime_type = message.document.mime_type
 
                 # Determine the file type based on MIME type
-                if mime_type.startswith('image/'):
-                    file_type = 'image'
-                elif mime_type.startswith('video/'):
-                    file_type = 'video'
-                elif mime_type == 'image/gif':
-                    file_type = 'gif'
+                if mime_type.startswith('image/') or mime_type.startswith('video/') or mime_type == 'image/gif':
+                    pass
                 else:
                     await update.message.reply_text("A MailerBot nem fogja elküldeni ezt a fájltípust.")
                     return
@@ -179,7 +175,7 @@ async def echo_img2(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 # Generate unique filename
                 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')[:-3]
                 file_name = f"{timestamp}_{message.document.file_name}"
-                folder_path = f"telegram_bot_{file_type}s/{date.strftime('%Y-%m')}"
+                folder_path = f"telegram_bot_files/{date.strftime('%Y-%m')}"
                 full_remote_path = f"{folder_path}/{file_name}"
 
                 # Create temporary directory
@@ -188,6 +184,22 @@ async def echo_img2(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 # Download document temporarily
                 local_path = f"temp/{file_name}"
                 await document_file.download_to_drive(local_path)
+
+            # Check if the message contains a video
+            elif message.video:
+                video_file = await message.video.get_file()
+
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                file_name = f"{timestamp}_{video_file.file_unique_id}.mp4"
+                folder_path = f"telegram_bot_files/{date.strftime('%Y-%m')}"
+                full_remote_path = f"{folder_path}/{file_name}"
+
+                # Create temporary directory
+                os.makedirs('temp', exist_ok=True)
+
+                # Download video temporarily
+                local_path = f"temp/{file_name}"
+                await video_file.download_to_drive(local_path)
 
             else:
                 await update.message.reply_text("A MailerBot nem fogja elküldeni ezt a fájltípust.")
@@ -319,7 +331,8 @@ def main() -> None:
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
     application.add_handler(MessageHandler(filters.PHOTO & ~filters.COMMAND, echo_img2))
     application.add_handler(MessageHandler(filters.Document.ALL & ~filters.COMMAND, echo_img2))
-
+    application.add_handler(MessageHandler(filters.AUDIO & ~filters.COMMAND, echo_img2))
+    application.add_handler(MessageHandler(filters.VIDEO & ~filters.COMMAND, echo_img2))
     # Run the bot until the user presses Ctrl-C
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
