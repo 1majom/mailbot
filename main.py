@@ -269,8 +269,26 @@ async def list_messages_handler(update: Update, context: ContextTypes.DEFAULT_TY
         if not data:
             await update.message.reply_text("Nincs üzenet!")
             return
-        messages = "\n".join([f"{key}: {value}" for key, value in data.items()])
-        await update.message.reply_text(f"Jelenlegi üzenetek:\n{messages}")
+        
+        # Split messages into chunks to avoid Telegram's 4096 char limit
+        MAX_LENGTH = 4000  # Leave some margin
+        header = "Jelenlegi üzenetek:\n"
+        chunks = []
+        current_chunk = header
+        
+        for key, value in data.items():
+            line = f"{key}: {value}\n"
+            if len(current_chunk) + len(line) > MAX_LENGTH:
+                chunks.append(current_chunk)
+                current_chunk = line
+            else:
+                current_chunk += line
+        
+        if current_chunk:
+            chunks.append(current_chunk)
+        
+        for chunk in chunks:
+            await update.message.reply_text(chunk)
 
 
 async def remove_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -313,7 +331,7 @@ def send_email(messages):
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Catch the error."""
-    print(f"{datetime.now()} - An error occurred: {context.error}")
+    logger.error(f"An error occurred: {context.error}")
 
 
 def main() -> None:
