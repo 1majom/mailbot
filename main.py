@@ -166,7 +166,7 @@ async def echo_img2(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 mime_type = message.document.mime_type
 
                 # Determine the file type based on MIME type
-                if mime_type.startswith('image/') or mime_type.startswith('video/') or mime_type == 'image/gif':
+                if mime_type.startswith('image/') or mime_type.startswith('video/') or mime_type == 'image/gif' or mime_type.startswith('application/pdf'):
                     pass
                 else:
                     await update.message.reply_text("A MailerBot nem fogja elküldeni ezt a fájltípust.")
